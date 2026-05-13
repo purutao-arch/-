@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="TILT">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="manifest" href="./manifest.json">
+  <title>TILT</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
+
+    :root {
+      --bg: #0a0a0a;
+      --fg: #f0f0f0;
+      --dim: #444;
+      --coin: #f0f0f0;
+      --ball: #f0f0f0;
+      --hole: #1a1a1a;
+      --line: rgba(240,240,240,0.08);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: 'DM Mono', monospace;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    #ui {
+      position: fixed; top: 0; left: 0; right: 0;
+      display: flex; justify-content: space-between; align-items: flex-start;
+      padding: max(env(safe-area-inset-top, 16px), 16px) 24px 0;
+      z-index: 10; pointer-events: none;
+    }
+    .ui-block { display: flex; flex-direction: column; gap: 2px; }
+    .ui-label { font-size: 10px; color: var(--dim); letter-spacing: 0.12em; text-transform: uppercase; }
+    .ui-val { font-size: 26px; font-weight: 500; color: var(--fg); line-height: 1; }
+
+    #timer-bar-wrap {
+      position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 20;
+    }
+    #timer-bar {
+      height: 3px; background: var(--fg);
+      width: 100%; transition: width 0.1s linear;
+    }
+
+    canvas {
+      display: block;
+      position: fixed; top: 0; left: 0;
+    }
+
+    /* Overlays */
+    .overlay {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: var(--bg);
+      z-index: 30;
+      gap: 0;
+    }
+    .overlay.hidden { display: none; }
+
+    .ov-title {
+      font-size: 52px; font-weight: 500; letter-spacing: -0.02em;
+      color: var(--fg); line-height: 1;
+      margin-bottom: 8px;
+    }
+    .ov-sub {
+      font-size: 12px; color: var(--dim);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      margin-bottom: 48px;
+    }
+    .ov-score-row {
+      display: flex; gap: 48px; margin-bottom: 56px;
+    }
+    .ov-score-block { text-align: center; }
+    .ov-score-label { font-size: 10px; color: var(--dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+    .ov-score-val { font-size: 36px; font-weight: 500; color: var(--fg); }
+
+    .btn {
+      font-family: 'DM Mono', monospace;
+      font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--bg); background: var(--fg);
+      border: none; border-radius: 0;
+      padding: 16px 40px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:active { opacity: 0.7; }
+
+    .btn-ghost {
+      background: transparent; color: var(--fg);
+      border: 1px solid var(--dim);
+      margin-top: 12px;
+    }
+
+    #permission-msg {
+      font-size: 11px; color: var(--dim);
+      letter-spacing: 0.08em; text-align: center;
+      max-width: 260px; line-height: 1.7;
+      margin-top: 20px;
+    }
+
+    /* Grid lines background */
+    #grid-canvas {
+      position: fixed; top: 0; left: 0;
+      pointer-events: none; z-index: 0; opacity: 0.4;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Timer bar -->
+<div id="timer-bar-wrap"><div id="timer-bar"></div></div>
+
+<!-- HUD -->
+<div id="ui">
+  <div class="ui-block">
+    <div class="ui-label">score</div>
+    <div class="ui-val" id="score-disp">0</div>
+  </div>
+  <div class="ui-block" style="text-align:right">
+    <div class="ui-label">level</div>
+    <div class="ui-val" id="level-disp">1</div>
+  </div>
+</div>
+
+<canvas id="grid-canvas"></canvas>
+<canvas id="game-canvas"></canvas>
+
+<!-- Start screen -->
+<div class="overlay" id="start-screen">
+  <div class="ov-title">TILT</div>
+  <div class="ov-sub">傾けてコインを集めろ</div>
+  <button class="btn" id="start-btn">START</button>
+  <div id="permission-msg">スマホを傾けてボールを操作します。<br>センサーの許可が必要な場合があります。</div>
+</div>
+
+<!-- Game Over screen -->
+<div class="overlay hidden" id="gameover-screen">
+  <div class="ov-title">TIME</div>
+  <div class="ov-sub" style="margin-bottom:32px">— up —</div>
+  <div class="ov-score-row">
+    <div class="ov-score-block">
+      <div class="ov-score-label">score</div>
+      <div class="ov-score-val" id="final-score">0</div>
+    </div>
+    <div class="ov-score-block">
+      <div class="ov-score-label">best</div>
+      <div class="ov-score-val" id="best-score">0</div>
+    </div>
+  </div>
+  <button class="btn" id="retry-btn">RETRY</button>
+</div>
+
+<script>
+// ── Canvas setup ──────────────────────────────────────────────
+const gc = document.getElementById('game-canvas');
+const ctx = gc.getContext('2d');
+const grid = document.getElementById('grid-canvas');
+const gctx = grid.getContext('2d');
+
+function resize() {
+  gc.width = grid.width = window.innerWidth;
+  gc.height = grid.height = window.innerHeight;
+  drawGrid();
+}
+window.addEventListener('resize', resize);
+resize();
+
+function drawGrid() {
+  gctx.clearRect(0, 0, grid.width, grid.height);
+  gctx.strokeStyle = 'rgba(240,240,240,0.06)';
+  gctx.lineWidth = 0.5;
+  const step = 40;
+  for (let x = 0; x < grid.width; x += step) {
+    gctx.beginPath(); gctx.moveTo(x, 0); gctx.lineTo(x, grid.height); gctx.stroke();
+  }
+  for (let y = 0; y < grid.height; y += step) {
+    gctx.beginPath(); gctx.moveTo(0, y); gctx.lineTo(grid.width, y); gctx.stroke();
+  }
+}
+
+// ── State ─────────────────────────────────────────────────────
+const BALL_R = 16;
+const COIN_R = 9;
+const HOLE_R = 22;
+const TIME_LIMIT = 30; // seconds
+const COINS_PER_LEVEL = 8;
+
+let state = 'start';
+let ball, vel, coins, holes, score, level, timeLeft, best, animId, lastTime, tiltX, tiltY;
+
+function loadBest() {
+  try { return parseInt(localStorage.getItem('tilt_best') || '0'); } catch(e) { return 0; }
+}
+function saveBest(s) {
+  try { localStorage.setItem('tilt_best', s); } catch(e) {}
+}
+
+function initGame() {
+  const W = gc.width, H = gc.height;
+  ball = { x: W/2, y: H/2 };
+  vel  = { x: 0, y: 0 };
+  score = 0;
+  level = 1;
+  timeLeft = TIME_LIMIT;
+  best = loadBest();
+  tiltX = 0; tiltY = 0;
+  spawnCoins();
+  spawnHoles();
+  document.getElementById('score-disp').textContent = '0';
+  document.getElementById('level-disp').textContent = '1';
+}
+
+function spawnCoins() {
+  coins = [];
+  const W = gc.width, H = gc.height;
+  const safeR = BALL_R * 4;
+  for (let i = 0; i < COINS_PER_LEVEL; i++) {
+    let c, tries = 0;
+    do {
+      c = {
+        x: COIN_R*2 + Math.random()*(W - COIN_R*4),
+        y: COIN_R*2 + Math.random()*(H - COIN_R*4),
+        scale: 1, opacity: 1, collected: false
+      };
+      tries++;
+    } while (tries < 30 && dist(c, ball) < safeR);
+    coins.push(c);
+  }
+}
+
+function spawnHoles() {
+  holes = [];
+  const W = gc.width, H = gc.height;
+  const count = Math.min(2 + level, 8);
+  for (let i = 0; i < count; i++) {
+    let h, tries = 0;
+    do {
+      h = { x: HOLE_R*2 + Math.random()*(W-HOLE_R*4), y: HOLE_R*2 + Math.random()*(H-HOLE_R*4) };
+      tries++;
+    } while (tries < 40 && (dist(h, ball) < 120 || coins.some(c => dist(h,c) < 60)));
+    holes.push(h);
+  }
+}
+
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+// ── Physics ───────────────────────────────────────────────────
+const GRAVITY = 0.45;
+const FRICTION = 0.97;
+const WALL_BOUNCE = 0.4;
+
+function update(dt) {
+  if (state !== 'playing') return;
+
+  // Time
+  timeLeft -= dt;
+  if (timeLeft <= 0) { timeLeft = 0; gameOver(); return; }
+
+  // Tilt → velocity
+  vel.x += tiltX * GRAVITY;
+  vel.y += tiltY * GRAVITY;
+  vel.x *= FRICTION;
+  vel.y *= FRICTION;
+
+  ball.x += vel.x;
+  ball.y += vel.y;
+
+  const W = gc.width, H = gc.height;
+
+  // Wall collision
+  if (ball.x - BALL_R < 0)    { ball.x = BALL_R;       vel.x = Math.abs(vel.x) * WALL_BOUNCE; }
+  if (ball.x + BALL_R > W)    { ball.x = W - BALL_R;   vel.x = -Math.abs(vel.x) * WALL_BOUNCE; }
+  if (ball.y - BALL_R < 0)    { ball.y = BALL_R;       vel.y = Math.abs(vel.y) * WALL_BOUNCE; }
+  if (ball.y + BALL_R > H)    { ball.y = H - BALL_R;   vel.y = -Math.abs(vel.y) * WALL_BOUNCE; }
+
+  // Coin collection
+  coins.forEach(c => {
+    if (!c.collected && dist(ball, c) < BALL_R + COIN_R) {
+      c.collected = true;
+      score++;
+      document.getElementById('score-disp').textContent = score;
+      // pop anim
+      c.scale = 1.6; c.opacity = 1;
+    }
+    if (c.collected) {
+      c.scale  = Math.max(0, c.scale  - 0.12);
+      c.opacity= Math.max(0, c.opacity- 0.12);
+    }
+  });
+
+  // Level up
+  if (coins.every(c => c.collected)) {
+    level++;
+    timeLeft = Math.min(timeLeft + 8, TIME_LIMIT); // bonus time
+    document.getElementById('level-disp').textContent = level;
+    spawnCoins();
+    spawnHoles();
+  }
+
+  // Hole
+  holes.forEach(h => {
+    if (dist(ball, h) < HOLE_R - BALL_R * 0.5) {
+      // Fall in: reset ball with penalty
+      score = Math.max(0, score - 2);
+      document.getElementById('score-disp').textContent = score;
+      ball.x = W/2; ball.y = H/2;
+      vel.x = 0; vel.y = 0;
+    }
+  });
+}
+
+// ── Draw ──────────────────────────────────────────────────────
+function draw() {
+  const W = gc.width, H = gc.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Holes
+  holes.forEach(h => {
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, HOLE_R, 0, Math.PI*2);
+    ctx.fillStyle = '#111';
+    ctx.fill();
+    // ring
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, HOLE_R, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(240,240,240,0.2)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // inner dot
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, 4, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(240,240,240,0.15)';
+    ctx.fill();
+  });
+
+  // Coins
+  coins.forEach(c => {
+    if (c.scale <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = c.opacity;
+    ctx.translate(c.x, c.y);
+    ctx.scale(c.scale, c.scale);
+    // outer ring
+    ctx.beginPath();
+    ctx.arc(0, 0, COIN_R, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(240,240,240,0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // inner dot
+    ctx.beginPath();
+    ctx.arc(0, 0, 3, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(240,240,240,0.7)';
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // Ball shadow
+  ctx.beginPath();
+  ctx.arc(ball.x + 3, ball.y + 4, BALL_R, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fill();
+
+  // Ball
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI*2);
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fill();
+
+  // Ball specular
+  ctx.beginPath();
+  ctx.arc(ball.x - 5, ball.y - 5, 5, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fill();
+
+  // Timer bar
+  const pct = Math.max(0, timeLeft / TIME_LIMIT);
+  document.getElementById('timer-bar').style.width = (pct * 100) + '%';
+  document.getElementById('timer-bar').style.background =
+    pct < 0.25 ? '#ff4444' : pct < 0.5 ? '#ffaa00' : '#f0f0f0';
+}
+
+// ── Loop ──────────────────────────────────────────────────────
+function loop(ts) {
+  if (!lastTime) lastTime = ts;
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+  update(dt);
+  draw();
+  animId = requestAnimationFrame(loop);
+}
+
+// ── Game flow ─────────────────────────────────────────────────
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('gameover-screen').classList.add('hidden');
+  initGame();
+  state = 'playing';
+  lastTime = 0;
+  animId = requestAnimationFrame(loop);
+}
+
+function gameOver() {
+  state = 'gameover';
+  cancelAnimationFrame(animId);
+  if (score > best) { best = score; saveBest(best); }
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('best-score').textContent = best;
+  document.getElementById('gameover-screen').classList.remove('hidden');
+}
+
+document.getElementById('start-btn').addEventListener('click', () => requestSensor(startGame));
+document.getElementById('retry-btn').addEventListener('click', () => requestSensor(startGame));
+
+// ── Sensor ────────────────────────────────────────────────────
+let useMouse = false;
+
+function requestSensor(cb) {
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    // iOS 13+
+    DeviceOrientationEvent.requestPermission()
+      .then(r => { if (r === 'granted') setupSensor(); cb(); })
+      .catch(() => { useMouse = true; setupMouse(); cb(); });
+  } else {
+    setupSensor();
+    cb();
+  }
+}
+
+function setupSensor() {
+  window.addEventListener('deviceorientation', e => {
+    // gamma: left/right tilt (-90 to 90)
+    // beta:  front/back tilt (-180 to 180)
+    tiltX = Math.max(-1, Math.min(1, (e.gamma || 0) / 30));
+    tiltY = Math.max(-1, Math.min(1, ((e.beta  || 0) - 10) / 30));
+  });
+}
+
+// PC fallback: mouse
+function setupMouse() {
+  window.addEventListener('mousemove', e => {
+    const W = window.innerWidth, H = window.innerHeight;
+    tiltX = ((e.clientX / W) - 0.5) * 2;
+    tiltY = ((e.clientY / H) - 0.5) * 2;
+  });
+}
+// Always set up mouse as fallback for PC testing
+setupMouse();
+
+// Service Worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>

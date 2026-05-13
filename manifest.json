@@ -1,0 +1,17 @@
+{
+  "name": "TILT",
+  "short_name": "TILT",
+  "description": "傾けてコインを集めろ",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' fill='%230a0a0a'/><circle cx='96' cy='96' r='40' fill='none' stroke='%23f0f0f0' stroke-width='6'/><circle cx='96' cy='96' r='12' fill='%23f0f0f0'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
